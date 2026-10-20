@@ -26,6 +26,10 @@
     <string name="slot_n">Slot %1$d</string>
     <string name="slot_empty">empty</string>
     <string name="state_saved">State saved</string>
+    <string name="state_save_failed">Save failed</string>
+    <string name="state_none">No save state yet</string>
+    <string name="util_save">SAVE</string>
+    <string name="util_load">LOAD</string>
     <string name="state_loaded">State loaded</string>
     <string name="state_load_failed">No state in that slot</string>
 

@@ -11,8 +11,8 @@ android {
         applicationId = "com.kyubiez96.kurogba"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.0.2"
 
         ndk {
             // The two .so files (mGBA core + KuroGBA host) are prebuilt by

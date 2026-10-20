@@ -61,6 +61,11 @@ class GameActivity : AppCompatActivity() {
     private var ffSpeed = 1
     private var cheatText = ""
 
+    // Dedicated on-screen SPEED buttons (rebuilt per orientation); all of
+    // them show the current speed and cycle it on tap.
+    private val speedButtons = mutableListOf<UtilityButtonView>()
+    private var panelMode = false
+
     private var emuThread: Thread? = null
     private var audioThread: Thread? = null
     private var renderThread: Thread? = null
@@ -293,32 +298,93 @@ class GameActivity : AppCompatActivity() {
         pushButtons()
     }
 
-    /* ---- Orientation-aware layout (real-GBA control placement) ---- */
+    /* ---- Orientation-aware layout (Pizza Boy / My Boy reference) ---- */
 
     private fun isLandscape(): Boolean =
         resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-    /** In portrait the game screen takes the top ~46% of the display. */
-    private fun portraitScreenHeightPx(): Int =
-        (resources.displayMetrics.heightPixels * 0.46f).toInt()
+    private fun dpF(v: Float): Int = (v * resources.displayMetrics.density).toInt()
+
+    /** Width (dp) of one side panel if the 3:2 screen is centered full-height. */
+    private fun panelWidthDp(): Float {
+        val dm = resources.displayMetrics
+        val wDp = dm.widthPixels / dm.density
+        val hDp = dm.heightPixels / dm.density
+        return (wDp - hDp * 1.5f) / 2f
+    }
+
+    /** Portrait top section: the 3:2 screen at full width + a bezel strip. */
+    private fun portraitTopHeightPx(): Int {
+        val dm = resources.displayMetrics
+        return dm.widthPixels * 2 / 3 + dp(30)
+    }
+
+    /** Adds [v] to the control layer at an absolute dp position. */
+    private fun place(parent: FrameLayout, v: View, xDp: Float, yDp: Float, wDp: Int, hDp: Int) {
+        parent.addView(
+            v,
+            FrameLayout.LayoutParams(dp(wDp), dp(hDp), Gravity.TOP or Gravity.START).apply {
+                leftMargin = dpF(xDp)
+                topMargin = dpF(yDp)
+            }
+        )
+    }
+
+    private fun utilButton(label: String, tap: () -> Unit): UtilityButtonView =
+        UtilityButtonView(this, label, tap)
+
+    private fun speedButton(): UtilityButtonView {
+        val b = utilButton(speedLabel()) { cycleSpeed() }
+        speedButtons.add(b)
+        return b
+    }
 
     private fun applyOrientationLayout() {
         val landscape = isLandscape()
+        val dm = resources.displayMetrics
+        val wDp = dm.widthPixels / dm.density
+        val hDp = dm.heightPixels / dm.density
 
-        // Screen bounds: full-bleed in landscape; top portion in portrait
-        // (ScreenView letterboxes inside its own bounds). The rest of the
-        // portrait screen becomes the console "deck".
-        screenView.layoutParams = FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            if (landscape) FrameLayout.LayoutParams.MATCH_PARENT else portraitScreenHeightPx(),
-            Gravity.TOP
-        )
+        // Console-body background behind everything: in portrait this is
+        // the deck surface; in landscape panel mode it forms the panels.
+        (screenView.parent as? View)?.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            orientation = GradientDrawable.Orientation.TOP_BOTTOM
+            setColors(intArrayOf(0xFF262632.toInt(), 0xFF13131A.toInt()))
+        }
 
-        // Top bar: in landscape the L/R shoulder slabs hug the top corners,
-        // so inset the bar between them; in portrait it spans full width.
-        (topBar.layoutParams as FrameLayout.LayoutParams).apply {
-            val inset = if (landscape) dp(146) else 0
-            setMargins(inset, 0, inset, 0)
+        panelMode = landscape && panelWidthDp() >= 120f
+        ControlsStyle.lightSurfaces = !landscape || panelMode
+        speedButtons.clear()
+
+        if (landscape) {
+            if (panelMode) {
+                // Centered 3:2 screen at full height, body panels at sides.
+                val screenWPx = (dm.heightPixels * 1.5f).toInt()
+                screenView.layoutParams = FrameLayout.LayoutParams(
+                    screenWPx, FrameLayout.LayoutParams.MATCH_PARENT,
+                    Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                )
+                (topBar.layoutParams as FrameLayout.LayoutParams).apply {
+                    val inset = (dm.widthPixels - screenWPx) / 2
+                    setMargins(inset, 0, inset, 0)
+                }
+            } else {
+                screenView.layoutParams = FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+                (topBar.layoutParams as FrameLayout.LayoutParams).apply {
+                    setMargins(dp(146), 0, dp(146), 0)
+                }
+            }
+        } else {
+            screenView.layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, portraitTopHeightPx(), Gravity.TOP
+            )
+            (topBar.layoutParams as FrameLayout.LayoutParams).apply {
+                setMargins(0, 0, 0, 0)
+            }
         }
         topBar.requestLayout()
 
@@ -328,7 +394,11 @@ class GameActivity : AppCompatActivity() {
         buttonBits = 0
         pushButtons()
         controlsOverlay.removeAllViews()
-        if (landscape) buildLandscapeControls() else buildPortraitControls()
+        when {
+            !landscape -> buildPortraitControls(wDp, hDp)
+            panelMode -> buildPanelControls(wDp, hDp)
+            else -> buildOverlayControls(wDp, hDp)
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -373,18 +443,145 @@ class GameActivity : AppCompatActivity() {
     }
 
     /** Start/Select pill pair, horizontally centered in a small container. */
-    private fun addPills(parent: FrameLayout, params: FrameLayout.LayoutParams) {
+    private fun addPills(parent: FrameLayout, params: FrameLayout.LayoutParams, darkOverlay: Boolean = false) {
         val pills = FrameLayout(this)
         parent.addView(pills, params)
-        val select = PillView(this, "SELECT", NativeBridge.Pad.SELECT, ::onButton)
+        val select = PillView(this, "SELECT", NativeBridge.Pad.SELECT, ::onButton, darkOverlay)
         pills.addView(select, FrameLayout.LayoutParams(dp(74), dp(28), Gravity.START or Gravity.CENTER_VERTICAL))
-        val start = PillView(this, "START", NativeBridge.Pad.START, ::onButton)
+        val start = PillView(this, "START", NativeBridge.Pad.START, ::onButton, darkOverlay)
         pills.addView(start, FrameLayout.LayoutParams(dp(74), dp(28), Gravity.END or Gravity.CENTER_VERTICAL))
     }
 
-    private fun buildLandscapeControls() {
-        // Shoulder slabs along the top-left / top-right edges, like
-        // holding a real GBA.
+    /**
+     * Portrait = the owner's Pizza Boy reference: framed screen + bezel
+     * wordmark on top, full console deck below holding light-surface
+     * controls in the reference positions.
+     */
+    private fun buildPortraitControls(wDp: Float, hDp: Float) {
+        val deckTopDp = portraitTopHeightPx() / resources.displayMetrics.density
+        val deckH = hDp - deckTopDp
+        fun fy(f: Float): Float = deckTopDp + deckH * f
+
+        // Console deck panel below the screen: dark body, rounded top edge.
+        val deck = View(this)
+        deck.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColors(intArrayOf(0xFF1C1C26.toInt(), 0xFF101016.toInt()))
+            cornerRadii = floatArrayOf(
+                dp(28).toFloat(), dp(28).toFloat(), dp(28).toFloat(), dp(28).toFloat(),
+                0f, 0f, 0f, 0f
+            )
+        }
+        controlsOverlay.addView(
+            deck,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, dpF(deckH), Gravity.BOTTOM
+            )
+        )
+
+        // Bezel wordmark centered under the screen (reference: brand strip).
+        val wordmark = TextView(this).apply {
+            text = "KURO GBA"
+            setTextColor(0xFFB9B9C9.toInt())
+            textSize = 13f
+            gravity = Gravity.CENTER
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            letterSpacing = 0.18f
+        }
+        place(controlsOverlay, wordmark, 0f, wDp * 2f / 3f + 3f, wDp.toInt(), 26)
+
+        // POWER LED, right of center at the top of the deck.
+        val led = TextView(this).apply {
+            text = "● POWER"
+            setTextColor(0xFF7BD88A.toInt())
+            textSize = 9f
+        }
+        place(controlsOverlay, led, wDp * 0.70f, fy(0.004f), 64, 14)
+
+        // Top deck row: L pill | SPEED toggle | R pill (the reference puts
+        // its speed control exactly here, between the shoulders).
+        val rowY = fy(0.045f)
+        val pillW = (wDp * 0.21f).toInt()
+        place(controlsOverlay, ShoulderView(this, "L", NativeBridge.Pad.L, ::onButton), wDp * 0.05f, rowY, pillW, 34)
+        place(controlsOverlay, ShoulderView(this, "R", NativeBridge.Pad.R, ::onButton), wDp * 0.95f - pillW, rowY, pillW, 34)
+        place(controlsOverlay, speedButton(), wDp * 0.365f, rowY, (wDp * 0.27f).toInt(), 34)
+
+        // D-pad plus: ~35% of width, left side of the deck.
+        val dpadSize = (wDp * 0.35f).toInt()
+        val dpad = DPadView(this) { mask ->
+            dpadBits = mask
+            pushButtons()
+        }
+        place(controlsOverlay, dpad, wDp * 0.09f, fy(0.22f), dpadSize, dpadSize)
+
+        // A/B diagonal: A up-right of B, ~13.5% of width each.
+        val abD = (wDp * 0.135f).toInt()
+        place(controlsOverlay, ActionButtonView(this, "A", NativeBridge.Pad.A, ::onButton), wDp * 0.84f - abD / 2f, fy(0.38f) - abD / 2f, abD, abD)
+        place(controlsOverlay, ActionButtonView(this, "B", NativeBridge.Pad.B, ::onButton), wDp * 0.69f - abD / 2f, fy(0.46f) - abD / 2f, abD, abD)
+
+        // Speaker grille, bottom-right of the deck (decorative).
+        place(controlsOverlay, SpeakerGrilleView(this), wDp * 0.70f, fy(0.64f), (wDp * 0.26f).toInt(), (deckH * 0.26f).toInt())
+
+        // SELECT / START pills, bottom-LEFT like the reference.
+        val ssY = deckTopDp + deckH * 0.84f
+        val ssW = (wDp * 0.25f).toInt()
+        place(controlsOverlay, PillView(this, "SELECT", NativeBridge.Pad.SELECT, ::onButton), wDp * 0.06f, ssY, ssW, 28)
+        place(controlsOverlay, PillView(this, "START", NativeBridge.Pad.START, ::onButton), wDp * 0.35f, ssY, ssW, 28)
+
+        // Bottom-edge utility row (reference: tiny icons on the bottom
+        // edge): SAVE / LOAD quick buttons.
+        val utilY = hDp - 38f
+        place(controlsOverlay, utilButton(getString(R.string.util_save)) { quickSave() }, wDp * 0.27f - 26f, utilY, 52, 30)
+        place(controlsOverlay, utilButton(getString(R.string.util_load)) { quickLoad() }, wDp * 0.50f - 26f, utilY, 52, 30)
+    }
+
+    /**
+     * Landscape with wide-enough margins = Pizza Boy panel mode: the
+     * centered screen is flanked by body panels that hold the controls.
+     */
+    private fun buildPanelControls(wDp: Float, hDp: Float) {
+        val panelW = panelWidthDp()
+        val rightX = wDp - panelW
+        val shoulderW = (panelW - 16).toInt()
+        val topY = hDp * 0.05f
+
+        // Left panel: L pill, LOAD utility, D-pad low in the panel.
+        place(controlsOverlay, ShoulderView(this, "L", NativeBridge.Pad.L, ::onButton), 8f, topY, shoulderW, 40)
+        place(controlsOverlay, utilButton(getString(R.string.util_load)) { quickLoad() }, 8f, topY + 50f, shoulderW, 30)
+        val dpadSize = minOf(panelW - 12, hDp * 0.36f).toInt()
+        val dpad = DPadView(this) { mask ->
+            dpadBits = mask
+            pushButtons()
+        }
+        place(controlsOverlay, dpad, (panelW - dpadSize) / 2f, hDp * 0.94f - dpadSize, dpadSize, dpadSize)
+
+        // Right panel: R pill, SPEED + SAVE utilities, A/B diagonal low.
+        place(controlsOverlay, ShoulderView(this, "R", NativeBridge.Pad.R, ::onButton), rightX + 8f, topY, shoulderW, 40)
+        place(controlsOverlay, speedButton(), rightX + 8f, topY + 50f, shoulderW, 30)
+        place(controlsOverlay, utilButton(getString(R.string.util_save)) { quickSave() }, rightX + 8f, topY + 90f, shoulderW, 30)
+        val abD = minOf(panelW * 0.44f, 84f).toInt()
+        val clusterH = abD * 1.8f
+        val clusterTop = hDp * 0.94f - clusterH
+        place(controlsOverlay, ActionButtonView(this, "A", NativeBridge.Pad.A, ::onButton), rightX + panelW * 0.70f - abD / 2f, clusterTop + clusterH * 0.28f - abD / 2f, abD, abD)
+        place(controlsOverlay, ActionButtonView(this, "B", NativeBridge.Pad.B, ::onButton), rightX + panelW * 0.32f - abD / 2f, clusterTop + clusterH * 0.72f - abD / 2f, abD, abD)
+
+        // Start/Select bottom-center over the screen (My Boy position),
+        // kept dark-translucent since they float on the game.
+        addPills(
+            controlsOverlay,
+            FrameLayout.LayoutParams(dp(160), dp(30), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+                setMargins(0, 0, 0, dp(12))
+            },
+            darkOverlay = true
+        )
+    }
+
+    /**
+     * Landscape fallback for squat screens (panels too narrow) = My Boy
+     * style: full-bleed game, translucent overlay controls.
+     */
+    private fun buildOverlayControls(wDp: Float, hDp: Float) {
+        // Shoulder slabs along the top-left / top-right edges.
         addShoulder(controlsOverlay, "L", NativeBridge.Pad.L, startSide = true, slim = false)
         addShoulder(controlsOverlay, "R", NativeBridge.Pad.R, startSide = false, slim = false)
 
@@ -415,71 +612,12 @@ class GameActivity : AppCompatActivity() {
                 setMargins(0, 0, 0, dp(12))
             }
         )
-    }
 
-    private fun buildPortraitControls() {
-        val screenHPx = portraitScreenHeightPx()
-        val deckTopDp = (screenHPx / resources.displayMetrics.density).toInt()
-
-        // Console deck panel below the screen: dark body with a rounded
-        // top edge, like the lower half of the handheld.
-        val deck = View(this)
-        deck.background = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            setColors(intArrayOf(0xFF1C1C26.toInt(), 0xFF101016.toInt()))
-            cornerRadii = floatArrayOf(
-                dp(28).toFloat(), dp(28).toFloat(), dp(28).toFloat(), dp(28).toFloat(),
-                0f, 0f, 0f, 0f
-            )
-        }
-        controlsOverlay.addView(
-            deck,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                resources.displayMetrics.heightPixels - screenHPx,
-                Gravity.BOTTOM
-            )
-        )
-
-        // L/R as slim bars at the deck's top corners.
-        val shoulderRow = FrameLayout(this)
-        controlsOverlay.addView(
-            shoulderRow,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, dp(44),
-                Gravity.TOP
-            ).apply { setMargins(0, dp(deckTopDp + 4), 0, 0) }
-        )
-        addShoulder(shoulderRow, "L", NativeBridge.Pad.L, startSide = true, slim = true)
-        addShoulder(shoulderRow, "R", NativeBridge.Pad.R, startSide = false, slim = true)
-
-        // Start/Select centered just under the screen, above the main deck.
-        addPills(
-            controlsOverlay,
-            FrameLayout.LayoutParams(
-                dp(160), dp(30), Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            ).apply { setMargins(0, dp(deckTopDp + 56), 0, 0) }
-        )
-
-        // D-pad left on the deck (192dp → 64dp arms).
-        val dpad = DPadView(this) { mask ->
-            dpadBits = mask
-            pushButtons()
-        }
-        controlsOverlay.addView(
-            dpad,
-            FrameLayout.LayoutParams(dp(192), dp(192), Gravity.TOP or Gravity.START).apply {
-                setMargins(dp(20), dp(deckTopDp + 104), 0, 0)
-            }
-        )
-
-        // A/B diagonal right on the deck, 72dp rounds.
-        addAbCluster(
-            controlsOverlay, 168, 72,
-            FrameLayout.LayoutParams(dp(208), dp(168), Gravity.TOP or Gravity.END).apply {
-                setMargins(0, dp(deckTopDp + 104), dp(14), 0)
-            }
-        )
+        // Dedicated utility buttons: SPEED top-center, SAVE / LOAD as
+        // small buttons on the side edges (My Boy edge-shortcut style).
+        place(controlsOverlay, speedButton(), wDp / 2f - 38f, 54f, 76, 30)
+        place(controlsOverlay, utilButton(getString(R.string.util_save)) { quickSave() }, wDp - 54f, hDp / 2f - 23f, 46, 46)
+        place(controlsOverlay, utilButton(getString(R.string.util_load)) { quickLoad() }, 8f, hDp / 2f - 23f, 46, 46)
     }
 
     /* ---- Dialog input lock ---- */
@@ -594,7 +732,11 @@ class GameActivity : AppCompatActivity() {
                 }
             }
             runOnUiThread {
-                if (ok) Toast.makeText(this, R.string.state_saved, Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this,
+                    if (ok) R.string.state_saved else R.string.state_save_failed,
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
@@ -647,6 +789,29 @@ class GameActivity : AppCompatActivity() {
             audioTrack?.play()
             ffBadge.visibility = View.GONE
         }
+        speedButtons.forEach { it.label = speedLabel() }
+    }
+
+    private fun speedLabel(): String = "» ${ffSpeed}×"
+
+    /** Dedicated SPEED button: cycle 1× → 2× → 4× → 1×. */
+    private fun cycleSpeed() {
+        setFastForward(when (ffSpeed) { 1 -> 2; 2 -> 4; else -> 1 })
+    }
+
+    /** Dedicated SAVE button: quick-save to slot 0 (toast confirms). */
+    private fun quickSave() {
+        if (coreReady) saveStateTo(0)
+    }
+
+    /** Dedicated LOAD button: quick-load slot 0, with feedback if empty. */
+    private fun quickLoad() {
+        if (!coreReady) return
+        if (!slotFile(0).exists()) {
+            Toast.makeText(this, R.string.state_none, Toast.LENGTH_SHORT).show()
+            return
+        }
+        loadStateFrom(0)
     }
 
     private fun showCheatsDialog() {
