@@ -1,5 +1,7 @@
 package com.kyubiez96.kurogba
 
+import android.content.res.Configuration
+import android.graphics.drawable.GradientDrawable
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
@@ -12,6 +14,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
@@ -38,6 +41,11 @@ class GameActivity : AppCompatActivity() {
     private lateinit var batteryIndicator: TextView
     private lateinit var ffBadge: TextView
     private lateinit var controlsOverlay: FrameLayout
+    private lateinit var topBar: LinearLayout
+
+    // Number of in-game dialogs currently open; while > 0 the touch
+    // controls are locked so dialog taps never leak into the game.
+    private var dialogDepth = 0
 
     private var romName = "game.gba"
     private var romKey = "game"
@@ -79,11 +87,12 @@ class GameActivity : AppCompatActivity() {
         batteryIndicator.text = "● ${getString(R.string.battery_saved)}"
         ffBadge = findViewById(R.id.ffBadge)
         controlsOverlay = findViewById(R.id.controlsOverlay)
+        topBar = findViewById(R.id.topBar)
 
         ControlsStyle.opacity = getSharedPreferences("settings", MODE_PRIVATE)
             .getInt(ControlsStyle.PREF_KEY, 150)
 
-        buildControls()
+        applyOrientationLayout()
         findViewById<Button>(R.id.menuButton).setOnClickListener { showMenu() }
 
         val uriString = intent.getStringExtra(EXTRA_URI)
@@ -284,52 +293,220 @@ class GameActivity : AppCompatActivity() {
         pushButtons()
     }
 
-    private fun buildControls() {
+    /* ---- Orientation-aware layout (real-GBA control placement) ---- */
+
+    private fun isLandscape(): Boolean =
+        resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    /** In portrait the game screen takes the top ~46% of the display. */
+    private fun portraitScreenHeightPx(): Int =
+        (resources.displayMetrics.heightPixels * 0.46f).toInt()
+
+    private fun applyOrientationLayout() {
+        val landscape = isLandscape()
+
+        // Screen bounds: full-bleed in landscape; top portion in portrait
+        // (ScreenView letterboxes inside its own bounds). The rest of the
+        // portrait screen becomes the console "deck".
+        screenView.layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            if (landscape) FrameLayout.LayoutParams.MATCH_PARENT else portraitScreenHeightPx(),
+            Gravity.TOP
+        )
+
+        // Top bar: in landscape the L/R shoulder slabs hug the top corners,
+        // so inset the bar between them; in portrait it spans full width.
+        (topBar.layoutParams as FrameLayout.LayoutParams).apply {
+            val inset = if (landscape) dp(146) else 0
+            setMargins(inset, 0, inset, 0)
+        }
+        topBar.requestLayout()
+
+        // Rebuild the control layer for this orientation, dropping any
+        // held input state from the previous arrangement.
+        dpadBits = 0
+        buttonBits = 0
+        pushButtons()
+        controlsOverlay.removeAllViews()
+        if (landscape) buildLandscapeControls() else buildPortraitControls()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applyOrientationLayout()
+        applyImmersive()
+    }
+
+    /** L/R shoulder slab anchored to a top corner of [parent]. */
+    private fun addShoulder(parent: FrameLayout, label: String, bit: Int, startSide: Boolean, slim: Boolean) {
+        val v = ShoulderView(this, label, bit, ::onButton)
+        parent.addView(
+            v,
+            FrameLayout.LayoutParams(
+                dp(if (slim) 116 else 128), dp(if (slim) 32 else 46),
+                Gravity.TOP or (if (startSide) Gravity.START else Gravity.END)
+            ).apply {
+                setMargins(if (startSide) dp(8) else 0, dp(6), if (startSide) 0 else dp(8), 0)
+            }
+        )
+    }
+
+    /**
+     * A/B pair in the authentic GBA diagonal inside a bottom-anchored
+     * cluster: B lower-left, A upper-right. [sizeDp] = button diameter.
+     */
+    private fun addAbCluster(parent: FrameLayout, clusterH: Int, sizeDp: Int, params: FrameLayout.LayoutParams) {
+        val cluster = FrameLayout(this)
+        parent.addView(cluster, params)
+        fun action(label: String, bit: Int, end: Int, bottom: Int) {
+            val v = ActionButtonView(this, label, bit, ::onButton)
+            cluster.addView(
+                v,
+                FrameLayout.LayoutParams(dp(sizeDp), dp(sizeDp), Gravity.BOTTOM or Gravity.END).apply {
+                    setMargins(0, 0, dp(end), dp(bottom))
+                }
+            )
+        }
+        val step = sizeDp + 12 // horizontal offset between B and A
+        action("B", NativeBridge.Pad.B, step, 4)
+        action("A", NativeBridge.Pad.A, 4, 4 + (clusterH - sizeDp) / 2)
+    }
+
+    /** Start/Select pill pair, horizontally centered in a small container. */
+    private fun addPills(parent: FrameLayout, params: FrameLayout.LayoutParams) {
+        val pills = FrameLayout(this)
+        parent.addView(pills, params)
+        val select = PillView(this, "SELECT", NativeBridge.Pad.SELECT, ::onButton)
+        pills.addView(select, FrameLayout.LayoutParams(dp(74), dp(28), Gravity.START or Gravity.CENTER_VERTICAL))
+        val start = PillView(this, "START", NativeBridge.Pad.START, ::onButton)
+        pills.addView(start, FrameLayout.LayoutParams(dp(74), dp(28), Gravity.END or Gravity.CENTER_VERTICAL))
+    }
+
+    private fun buildLandscapeControls() {
+        // Shoulder slabs along the top-left / top-right edges, like
+        // holding a real GBA.
+        addShoulder(controlsOverlay, "L", NativeBridge.Pad.L, startSide = true, slim = false)
+        addShoulder(controlsOverlay, "R", NativeBridge.Pad.R, startSide = false, slim = false)
+
+        // Big plus bottom-left (216dp → 72dp arms).
         val dpad = DPadView(this) { mask ->
             dpadBits = mask
             pushButtons()
         }
         controlsOverlay.addView(
             dpad,
-            FrameLayout.LayoutParams(dp(176), dp(176), Gravity.BOTTOM or Gravity.START).apply {
-                setMargins(dp(16), 0, 0, dp(24))
+            FrameLayout.LayoutParams(dp(216), dp(216), Gravity.BOTTOM or Gravity.START).apply {
+                setMargins(dp(20), 0, 0, dp(22))
             }
         )
 
-        // Right cluster: L/R shoulders on top, B/A below.
-        val cluster = FrameLayout(this)
-        controlsOverlay.addView(
-            cluster,
-            FrameLayout.LayoutParams(dp(232), dp(196), Gravity.BOTTOM or Gravity.END).apply {
-                setMargins(0, 0, dp(12), dp(24))
+        // A/B diagonal bottom-right, 76dp rounds.
+        addAbCluster(
+            controlsOverlay, 184, 76,
+            FrameLayout.LayoutParams(dp(224), dp(184), Gravity.BOTTOM or Gravity.END).apply {
+                setMargins(0, 0, dp(14), dp(18))
             }
         )
-        fun action(label: String, bit: Int, size: Int, gravity: Int, end: Int, top: Int, bottom: Int) {
-            val v = ActionButtonView(this, label, bit, ::onButton)
-            cluster.addView(
-                v,
-                FrameLayout.LayoutParams(dp(size), dp(size), gravity).apply {
-                    setMargins(0, dp(top), dp(end), dp(bottom))
-                }
+
+        // Start/Select pills bottom-center.
+        addPills(
+            controlsOverlay,
+            FrameLayout.LayoutParams(dp(160), dp(30), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+                setMargins(0, 0, 0, dp(12))
+            }
+        )
+    }
+
+    private fun buildPortraitControls() {
+        val screenHPx = portraitScreenHeightPx()
+        val deckTopDp = (screenHPx / resources.displayMetrics.density).toInt()
+
+        // Console deck panel below the screen: dark body with a rounded
+        // top edge, like the lower half of the handheld.
+        val deck = View(this)
+        deck.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            setColors(intArrayOf(0xFF1C1C26.toInt(), 0xFF101016.toInt()))
+            cornerRadii = floatArrayOf(
+                dp(28).toFloat(), dp(28).toFloat(), dp(28).toFloat(), dp(28).toFloat(),
+                0f, 0f, 0f, 0f
             )
         }
-        action("L", NativeBridge.Pad.L, 54, Gravity.TOP or Gravity.START, 0, 0, 0)
-        action("R", NativeBridge.Pad.R, 54, Gravity.TOP or Gravity.END, 0, 0, 0)
-        action("B", NativeBridge.Pad.B, 62, Gravity.BOTTOM or Gravity.END, 84, 0, 4)
-        action("A", NativeBridge.Pad.A, 62, Gravity.BOTTOM or Gravity.END, 4, 0, 40)
-
-        // Start / Select pills, bottom center.
-        val pills = FrameLayout(this)
         controlsOverlay.addView(
-            pills,
-            FrameLayout.LayoutParams(dp(160), dp(30), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-                setMargins(0, 0, 0, dp(14))
+            deck,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                resources.displayMetrics.heightPixels - screenHPx,
+                Gravity.BOTTOM
+            )
+        )
+
+        // L/R as slim bars at the deck's top corners.
+        val shoulderRow = FrameLayout(this)
+        controlsOverlay.addView(
+            shoulderRow,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, dp(44),
+                Gravity.TOP
+            ).apply { setMargins(0, dp(deckTopDp + 4), 0, 0) }
+        )
+        addShoulder(shoulderRow, "L", NativeBridge.Pad.L, startSide = true, slim = true)
+        addShoulder(shoulderRow, "R", NativeBridge.Pad.R, startSide = false, slim = true)
+
+        // Start/Select centered just under the screen, above the main deck.
+        addPills(
+            controlsOverlay,
+            FrameLayout.LayoutParams(
+                dp(160), dp(30), Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            ).apply { setMargins(0, dp(deckTopDp + 56), 0, 0) }
+        )
+
+        // D-pad left on the deck (192dp → 64dp arms).
+        val dpad = DPadView(this) { mask ->
+            dpadBits = mask
+            pushButtons()
+        }
+        controlsOverlay.addView(
+            dpad,
+            FrameLayout.LayoutParams(dp(192), dp(192), Gravity.TOP or Gravity.START).apply {
+                setMargins(dp(20), dp(deckTopDp + 104), 0, 0)
             }
         )
-        val select = PillView(this, "SELECT", NativeBridge.Pad.SELECT, ::onButton)
-        pills.addView(select, FrameLayout.LayoutParams(dp(74), dp(28), Gravity.START))
-        val start = PillView(this, "START", NativeBridge.Pad.START, ::onButton)
-        pills.addView(start, FrameLayout.LayoutParams(dp(74), dp(28), Gravity.END))
+
+        // A/B diagonal right on the deck, 72dp rounds.
+        addAbCluster(
+            controlsOverlay, 168, 72,
+            FrameLayout.LayoutParams(dp(208), dp(168), Gravity.TOP or Gravity.END).apply {
+                setMargins(0, dp(deckTopDp + 104), dp(14), 0)
+            }
+        )
+    }
+
+    /* ---- Dialog input lock ---- */
+
+    /** Lock/unlock the touch controls based on how many dialogs are open. */
+    private fun updateControlsLock() {
+        val locked = dialogDepth > 0
+        ControlsStyle.inputEnabled = !locked
+        if (locked) {
+            // Force-release anything held so the game never sees stuck input.
+            dpadBits = 0
+            buttonBits = 0
+            pushButtons()
+        }
+    }
+
+    /** Wires show/dismiss of an in-game dialog into the input lock. */
+    private fun trackDialog(dialog: AlertDialog, onDismissExtra: (() -> Unit)? = null) {
+        dialog.setOnShowListener {
+            dialogDepth++
+            updateControlsLock()
+        }
+        dialog.setOnDismissListener {
+            dialogDepth--
+            updateControlsLock()
+            onDismissExtra?.invoke()
+        }
     }
 
     /* ---------------- Menu ---------------- */
@@ -360,7 +537,7 @@ class GameActivity : AppCompatActivity() {
             getString(R.string.menu_reset),
             getString(R.string.menu_exit)
         )
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(romName)
             .setItems(items) { _, which ->
                 when (which) {
@@ -373,8 +550,9 @@ class GameActivity : AppCompatActivity() {
                     6 -> finish()
                 }
             }
-            .setOnDismissListener { if (!isFinishing) paused = wasPaused }
-            .show()
+            .create()
+        trackDialog(dialog) { if (!isFinishing) paused = wasPaused }
+        dialog.show()
     }
 
     private fun slotFile(slot: Int): File {
@@ -394,12 +572,14 @@ class GameActivity : AppCompatActivity() {
             }
             "$base — $suffix"
         }
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(if (save) R.string.menu_save_state else R.string.menu_load_state)
             .setItems(labels.toTypedArray()) { _, which ->
                 if (save) saveStateTo(which) else loadStateFrom(which)
             }
-            .show()
+            .create()
+        trackDialog(dialog)
+        dialog.show()
     }
 
     private fun saveStateTo(slot: Int) {
@@ -444,13 +624,15 @@ class GameActivity : AppCompatActivity() {
             getString(R.string.ff_off), getString(R.string.ff_2x), getString(R.string.ff_4x)
         )
         val current = when (ffSpeed) { 2 -> 1; 4 -> 2; else -> 0 }
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.menu_fast_forward)
-            .setSingleChoiceItems(labels, current) { dialog, which ->
+            .setSingleChoiceItems(labels, current) { d, which ->
                 setFastForward(intArrayOf(1, 2, 4)[which])
-                dialog.dismiss()
+                d.dismiss()
             }
-            .show()
+            .create()
+        trackDialog(dialog)
+        dialog.show()
     }
 
     private fun setFastForward(speed: Int) {
@@ -474,7 +656,7 @@ class GameActivity : AppCompatActivity() {
             setSingleLine(false)
             maxLines = 5
         }
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.cheats_title)
             .setView(input)
             .setPositiveButton(R.string.cheats_apply) { _, _ ->
@@ -492,7 +674,9 @@ class GameActivity : AppCompatActivity() {
                 Toast.makeText(this, R.string.cheats_cleared, Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .create()
+        trackDialog(dialog)
+        dialog.show()
     }
 
     private fun showOpacityDialog() {
@@ -513,11 +697,13 @@ class GameActivity : AppCompatActivity() {
                     .putInt(ControlsStyle.PREF_KEY, ControlsStyle.opacity).apply()
             }
         })
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.menu_opacity)
             .setView(seek)
             .setPositiveButton(android.R.string.ok, null)
-            .show()
+            .create()
+        trackDialog(dialog)
+        dialog.show()
     }
 
     private fun refreshControlsAlpha() {
@@ -563,6 +749,9 @@ class GameActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         destroyed = true
+        // Never leak the dialog input lock into a future instance.
+        dialogDepth = 0
+        ControlsStyle.inputEnabled = true
         emuRunning = false
         try { emuThread?.join(600) } catch (_: Exception) {}
         try { audioThread?.join(300) } catch (_: Exception) {}

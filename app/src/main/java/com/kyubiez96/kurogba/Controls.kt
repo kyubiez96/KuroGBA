@@ -13,6 +13,14 @@ import kotlin.math.abs
 object ControlsStyle {
     var opacity: Int = 150
     const val PREF_KEY = "controls_opacity"
+
+    /**
+     * Master input gate: GameActivity flips this off while any in-game
+     * dialog (menu, slot picker, cheats…) is open, so touches meant for the
+     * dialog never leak into the game. Views also force-release themselves
+     * when they see the gate closed.
+     */
+    @Volatile var inputEnabled: Boolean = true
 }
 
 private val padPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
@@ -62,6 +70,13 @@ class DPadView(context: Context, private val onMask: (Int) -> Unit) : View(conte
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!ControlsStyle.inputEnabled) {
+            if (pointers.isNotEmpty() || currentMask != 0) {
+                pointers.clear()
+                recompute()
+            }
+            return true
+        }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val i = event.actionIndex
@@ -128,6 +143,10 @@ class ActionButtonView(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!ControlsStyle.inputEnabled) {
+            forceRelease()
+            return true
+        }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN ->
                 pointers.add(event.getPointerId(event.actionIndex))
@@ -142,6 +161,17 @@ class ActionButtonView(
             invalidate()
         }
         return true
+    }
+
+    private fun forceRelease() {
+        if (pointers.isNotEmpty() || pressed) {
+            pointers.clear()
+            if (pressed) {
+                pressed = false
+                onChange(bit, false)
+            }
+            invalidate()
+        }
     }
 }
 
@@ -172,6 +202,10 @@ class PillView(
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!ControlsStyle.inputEnabled) {
+            forceRelease()
+            return true
+        }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN ->
                 pointers.add(event.getPointerId(event.actionIndex))
@@ -186,5 +220,81 @@ class PillView(
             invalidate()
         }
         return true
+    }
+
+    private fun forceRelease() {
+        if (pointers.isNotEmpty() || pressed) {
+            pointers.clear()
+            if (pressed) {
+                pressed = false
+                onChange(bit, false)
+            }
+            invalidate()
+        }
+    }
+}
+
+/**
+ * Wide shoulder button (L / R) shaped like the slab on top of a real GBA:
+ * a broad, low rounded bar meant to hug the top edge of the device (or the
+ * top corners of the portrait control deck). Same multi-pointer behaviour
+ * as the round action buttons.
+ */
+class ShoulderView(
+    context: Context,
+    private val label: String,
+    private val bit: Int,
+    private val onChange: (Int, Boolean) -> Unit
+) : View(context) {
+
+    private val pointers = HashSet<Int>()
+    private var pressed = false
+    private val rect = RectF()
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        rect.set(2f, 2f, width - 2f, height - 2f)
+        val (fill, stroke) = padColors(pressed)
+        padPaint.color = fill
+        padStroke.color = stroke
+        val radius = height * 0.38f
+        canvas.drawRoundRect(rect, radius, radius, padPaint)
+        canvas.drawRoundRect(rect, radius, radius, padStroke)
+        labelPaint.color = (ControlsStyle.opacity shl 24) or 0x00FFFFFF
+        labelPaint.textSize = height * 0.44f
+        val baseline = height / 2f - (labelPaint.descent() + labelPaint.ascent()) / 2f
+        canvas.drawText(label, width / 2f, baseline, labelPaint)
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (!ControlsStyle.inputEnabled) {
+            forceRelease()
+            return true
+        }
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN ->
+                pointers.add(event.getPointerId(event.actionIndex))
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL ->
+                pointers.remove(event.getPointerId(event.actionIndex))
+        }
+        val now = pointers.isNotEmpty()
+        if (now != pressed) {
+            pressed = now
+            if (now) performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            onChange(bit, now)
+            invalidate()
+        }
+        return true
+    }
+
+    private fun forceRelease() {
+        if (pointers.isNotEmpty() || pressed) {
+            pointers.clear()
+            if (pressed) {
+                pressed = false
+                onChange(bit, false)
+            }
+            invalidate()
+        }
     }
 }
