@@ -1,0 +1,39 @@
+# ===== KuroGBA strict ignore list =====
+# ROMs and game data — NEVER commit (no-ROM policy)
+*.gba
+*.gbc
+*.gb
+*.sav
+*.srm
+*.state
+*.ss0
+*.rtc
+
+# Secrets / signing material — NEVER commit
+*.keystore
+*.jks
+*.p12
+*.pem
+*.key
+local.properties
+keystore.properties
+
+# Gradle / Android build outputs
+.gradle/
+build/
+out/
+app/build/
+app/src/main/jniLibs/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# IDE / OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Native build scratch (core + host objects)
+build-native/
