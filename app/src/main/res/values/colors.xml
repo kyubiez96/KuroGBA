@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="kuro_bg">#0B0B10</color>
+    <color name="kuro_surface">#15151D</color>
+    <color name="kuro_surface_2">#1E1E28</color>
+    <color name="kuro_accent">#7C6CFF</color>
+    <color name="kuro_accent_dim">#4A3FBF</color>
+    <color name="kuro_text">#F2F2F7</color>
+    <color name="kuro_text_dim">#9A9AA5</color>
+    <color name="kuro_pad">#2A2A35</color>
+    <color name="ic_launcher_background">#0B0B10</color>
+</resources>

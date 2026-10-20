@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- KuroGBA launcher foreground: a violet gamepad glyph (D-pad + buttons). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- D-pad (plus) -->
+    <path
+        android:fillColor="#7C6CFF"
+        android:pathData="M30,38 h9 v-9 h12 v9 h9 v12 h-9 v9 h-12 v-9 h-9 z" />
+    <!-- A / B buttons -->
+    <path
+        android:fillColor="#B7AEFF"
+        android:pathData="M76,36 m-6.5,0 a6.5,6.5 0 1,1 13,0 a6.5,6.5 0 1,1 -13,0 z" />
+    <path
+        android:fillColor="#574CD6"
+        android:pathData="M89,50 m-6.5,0 a6.5,6.5 0 1,1 13,0 a6.5,6.5 0 1,1 -13,0 z" />
+    <!-- Start / Select pills -->
+    <path
+        android:fillColor="#3D3D4D"
+        android:pathData="M40,72 h12 a3,3 0 0,1 0,6 h-12 a3,3 0 0,1 0,-6 z" />
+    <path
+        android:fillColor="#3D3D4D"
+        android:pathData="M58,72 h12 a3,3 0 0,1 0,6 h-12 a3,3 0 0,1 0,-6 z" />
+</vector>

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">KuroGBA</string>
+    <string name="tagline">Game Boy Advance, distilled.</string>
+    <string name="open_rom">Open ROM</string>
+    <string name="recent_games">Recent Games</string>
+    <string name="no_recent">No games yet.\nTap “Open ROM” and pick a .gba file to start playing.</string>
+    <string name="footer">Powered by the mGBA core (MPL-2.0) • No ROMs included • No ads, no tracking</string>
+    <string name="remove_recent">Remove from recents</string>
+    <string name="menu">Menu</string>
+    <string name="battery_saved">Battery saved</string>
+
+    <string name="menu_save_state">Save State</string>
+    <string name="menu_load_state">Load State</string>
+    <string name="menu_fast_forward">Fast-Forward</string>
+    <string name="menu_cheats">Cheats…</string>
+    <string name="menu_opacity">Controls Opacity…</string>
+    <string name="menu_reset">Reset Game</string>
+    <string name="menu_exit">Exit Game</string>
+
+    <string name="ff_off">Off</string>
+    <string name="ff_2x">2×</string>
+    <string name="ff_4x">4×</string>
+
+    <string name="slot_quick">Quick Slot</string>
+    <string name="slot_n">Slot %1$d</string>
+    <string name="slot_empty">empty</string>
+    <string name="state_saved">State saved</string>
+    <string name="state_loaded">State loaded</string>
+    <string name="state_load_failed">No state in that slot</string>
+
+    <string name="cheats_title">Cheats</string>
+    <string name="cheats_hint">GameShark / CodeBreaker code (one per line)</string>
+    <string name="cheats_apply">Apply</string>
+    <string name="cheats_clear">Clear All</string>
+    <string name="cheats_applied">Cheat applied</string>
+    <string name="cheats_cleared">Cheats cleared</string>
+
+    <string name="err_read_rom">Could not read that file</string>
+    <string name="err_not_gba">That does not look like a GBA ROM</string>
+    <string name="err_load_failed">The core refused this ROM</string>
+</resources>
