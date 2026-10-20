@@ -39,8 +39,12 @@ CORE_FLAGS=(
     -DENABLE_DEBUGGERS=OFF -DENABLE_SCRIPTING=OFF
     -DUSE_PNG=OFF -DUSE_LIBZIP=OFF -DUSE_MINIZIP=OFF -DUSE_SQLITE3=OFF
     -DUSE_ELF=OFF -DUSE_LUA=OFF -DUSE_LZMA=OFF -DUSE_JSON_C=OFF
-    -DUSE_FREETYPE=OFF -DM_CORE_GB=OFF
+    -DUSE_FREETYPE=OFF
 )
+# NOTE: M_CORE_GB must stay ON. The shared libretro frontend references
+# GB-core types (enum GBModel, GB_SIZE_WORKING_RAM) unconditionally, so a
+# GBA-only core build fails to compile (CI run 39464386229). The KuroGBA
+# UI is GBA-only regardless; the core just carries the GB code along.
 
 for ABI in $ABIS; do
     echo "=== [$ABI] mGBA libretro core ==="

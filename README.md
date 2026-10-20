@@ -33,7 +33,8 @@ Bring your own ROMs, tap, play.
 ### Deferred to later versions
 
 Bluetooth/USB gamepads · screen filters & shaders · rewind · per-game
-settings · GB/GBC support · cover-art library grid.
+settings · GB/GBC in the UI (the core already supports it; the v1 picker
+and screen are GBA-tuned) · cover-art library grid.
 
 ## No-ROM policy
 
