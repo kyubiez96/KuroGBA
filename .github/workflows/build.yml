@@ -1,0 +1,73 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write # needed to attach the APK to a release on tag builds
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Init mGBA submodule (pinned commit)
+        run: |
+          git submodule update --init --depth 1 third_party/mgba \
+            || git submodule update --init third_party/mgba
+          git -C third_party/mgba log -1 --format='mgba @ %H'
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android NDK r26 + CMake
+        run: |
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" "ndk;26.3.11579264" "cmake;3.22.1"
+          echo "ANDROID_NDK_HOME=$SDK/ndk/26.3.11579264" >> "$GITHUB_ENV"
+          echo "CMAKE_BIN=$SDK/cmake/3.22.1/bin/cmake" >> "$GITHUB_ENV"
+
+      - name: Generate sideload (debug) keystore
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -keystore "$HOME/.android/debug.keystore" \
+            -alias androiddebugkey -storepass android -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Build native libraries (mGBA core + host)
+        run: bash tools/build-native.sh
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: APK report
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          ls -la "$APK"
+          unzip -l "$APK" | grep -E "\.so|classes.*\.dex" || true
+          AAPT="$(ls "$ANDROID_HOME"/build-tools/*/aapt 2>/dev/null | sort -V | tail -n 1 || true)"
+          if [ -n "$AAPT" ]; then "$AAPT" dump badging "$APK" | head -n 4; fi
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KuroGBA-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      - name: Attach APK to GitHub Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/release/app-release.apk
