@@ -526,13 +526,13 @@ class GameActivity : AppCompatActivity() {
         // they used to be jammed at bottom-left with dead space + the
         // speaker grille on the right — the grille is gone, comfort wins
         // over decoration).
-        val rowY = hDp - 48f
+        val bottomY = hDp - 48f
         val btnW = (wDp * 0.205f).toInt()
         val gapF = (wDp - 4 * btnW) / 5f
-        place(controlsOverlay, PillView(this, "SELECT", NativeBridge.Pad.SELECT, ::onButton), gapF, rowY, btnW, 30)
-        place(controlsOverlay, utilButton(getString(R.string.util_save)) { quickSave() }, gapF * 2 + btnW, rowY, btnW, 30)
-        place(controlsOverlay, utilButton(getString(R.string.util_load)) { quickLoad() }, gapF * 3 + btnW * 2, rowY, btnW, 30)
-        place(controlsOverlay, PillView(this, "START", NativeBridge.Pad.START, ::onButton), gapF * 4 + btnW * 3, rowY, btnW, 30)
+        place(controlsOverlay, PillView(this, "SELECT", NativeBridge.Pad.SELECT, ::onButton), gapF, bottomY, btnW, 30)
+        place(controlsOverlay, utilButton(getString(R.string.util_save)) { quickSave() }, gapF * 2 + btnW, bottomY, btnW, 30)
+        place(controlsOverlay, utilButton(getString(R.string.util_load)) { quickLoad() }, gapF * 3 + btnW * 2, bottomY, btnW, 30)
+        place(controlsOverlay, PillView(this, "START", NativeBridge.Pad.START, ::onButton), gapF * 4 + btnW * 3, bottomY, btnW, 30)
     }
 
     /**
