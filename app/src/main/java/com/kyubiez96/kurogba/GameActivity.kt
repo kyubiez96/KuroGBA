@@ -506,33 +506,33 @@ class GameActivity : AppCompatActivity() {
         place(controlsOverlay, ShoulderView(this, "R", NativeBridge.Pad.R, ::onButton), wDp * 0.95f - pillW, rowY, pillW, 34)
         place(controlsOverlay, speedButton(), wDp * 0.365f, rowY, (wDp * 0.27f).toInt(), 34)
 
-        // D-pad plus: ~35% of width, left side of the deck.
-        val dpadSize = (wDp * 0.35f).toInt()
+        // D-pad, PS1-style separate buttons: ~44% of deck width (and at
+        // least 168dp so each direction zone is >=56dp for a thumb),
+        // left side of the deck.
+        val dpadSize = maxOf((wDp * 0.44f).toInt(), 168)
         val dpad = DPadView(this) { mask ->
             dpadBits = mask
             pushButtons()
         }
-        place(controlsOverlay, dpad, wDp * 0.09f, fy(0.22f), dpadSize, dpadSize)
+        place(controlsOverlay, dpad, wDp * 0.045f, fy(0.20f), dpadSize, dpadSize)
 
         // A/B diagonal: A up-right of B, ~13.5% of width each.
         val abD = (wDp * 0.135f).toInt()
         place(controlsOverlay, ActionButtonView(this, "A", NativeBridge.Pad.A, ::onButton), wDp * 0.84f - abD / 2f, fy(0.38f) - abD / 2f, abD, abD)
         place(controlsOverlay, ActionButtonView(this, "B", NativeBridge.Pad.B, ::onButton), wDp * 0.69f - abD / 2f, fy(0.46f) - abD / 2f, abD, abD)
 
-        // Speaker grille, bottom-right of the deck (decorative).
-        place(controlsOverlay, SpeakerGrilleView(this), wDp * 0.70f, fy(0.64f), (wDp * 0.26f).toInt(), (deckH * 0.26f).toInt())
-
-        // SELECT / START pills, bottom-LEFT like the reference.
-        val ssY = deckTopDp + deckH * 0.84f
-        val ssW = (wDp * 0.25f).toInt()
-        place(controlsOverlay, PillView(this, "SELECT", NativeBridge.Pad.SELECT, ::onButton), wDp * 0.06f, ssY, ssW, 28)
-        place(controlsOverlay, PillView(this, "START", NativeBridge.Pad.START, ::onButton), wDp * 0.35f, ssY, ssW, 28)
-
-        // Bottom-edge utility row (reference: tiny icons on the bottom
-        // edge): SAVE / LOAD quick buttons.
-        val utilY = hDp - 38f
-        place(controlsOverlay, utilButton(getString(R.string.util_save)) { quickSave() }, wDp * 0.27f - 26f, utilY, 52, 30)
-        place(controlsOverlay, utilButton(getString(R.string.util_load)) { quickLoad() }, wDp * 0.50f - 26f, utilY, 52, 30)
+        // Bottom row: SELECT · SAVE · LOAD · START spread SYMMETRICALLY
+        // across the full deck width on one baseline, even gaps (owner:
+        // they used to be jammed at bottom-left with dead space + the
+        // speaker grille on the right — the grille is gone, comfort wins
+        // over decoration).
+        val rowY = hDp - 48f
+        val btnW = (wDp * 0.205f).toInt()
+        val gapF = (wDp - 4 * btnW) / 5f
+        place(controlsOverlay, PillView(this, "SELECT", NativeBridge.Pad.SELECT, ::onButton), gapF, rowY, btnW, 30)
+        place(controlsOverlay, utilButton(getString(R.string.util_save)) { quickSave() }, gapF * 2 + btnW, rowY, btnW, 30)
+        place(controlsOverlay, utilButton(getString(R.string.util_load)) { quickLoad() }, gapF * 3 + btnW * 2, rowY, btnW, 30)
+        place(controlsOverlay, PillView(this, "START", NativeBridge.Pad.START, ::onButton), gapF * 4 + btnW * 3, rowY, btnW, 30)
     }
 
     /**

@@ -63,45 +63,65 @@ private fun controlLabelColor(light: Boolean = ControlsStyle.lightSurfaces): Int
     else (ControlsStyle.opacity shl 24) or 0x00FFFFFF
 
 /**
- * 8-way D-pad drawn as a plus. Slide-friendly: the active direction set is
- * recomputed from every active pointer position on each event, so sliding a
- * thumb across the pad (including diagonals) just works.
+ * 8-way D-pad, PS1-controller style: FOUR SEPARATE direction buttons in a
+ * cross formation with real gaps between them (the owner found the solid
+ * plus's short arms cramped). Slide-friendly: the active direction set is
+ * recomputed from every active pointer position on each event — hit areas
+ * are positional zones around the center, so pressing a corner registers
+ * both adjacent directions and sliding a thumb across buttons (including
+ * diagonals) just works.
  */
 class DPadView(context: Context, private val onMask: (Int) -> Unit) : View(context) {
 
     private val pointers = HashMap<Int, Pair<Float, Float>>()
     private var currentMask = 0
-    private val rectV = RectF()
-    private val rectH = RectF()
+    private val rect = RectF()
     private val markerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val triPath = Path()
+
+    // Direction order used by drawTriangle: 0=up, 1=right, 2=down, 3=left.
+    private fun dirBit(dir: Int): Int = when (dir) {
+        0 -> NativeBridge.Pad.UP
+        1 -> NativeBridge.Pad.RIGHT
+        2 -> NativeBridge.Pad.DOWN
+        else -> NativeBridge.Pad.LEFT
+    }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val w = width.toFloat()
         val h = height.toFloat()
-        val arm = w / 3f
-        rectV.set(arm, 0f, arm * 2, h)
-        rectH.set(0f, arm, w, arm * 2)
-        val (fill, stroke) = padColors(currentMask != 0)
-        padPaint.color = fill
-        padStroke.color = stroke
-        canvas.drawRoundRect(rectV, 14f, 14f, padPaint)
-        canvas.drawRoundRect(rectH, 14f, 14f, padPaint)
-        canvas.drawRoundRect(rectV, 14f, 14f, padStroke)
-        canvas.drawRoundRect(rectH, 14f, 14f, padStroke)
-        // Reference-pad details: round center pivot + triangle marker on
-        // each arm end (drawn in the label color, subtle alpha).
+        val cell = w / 3f
         val cx = w / 2f
         val cy = h / 2f
+        // Four separate rounded buttons, slightly elongated radially,
+        // centered on their cross cells with a clear gap between them.
+        val bw = cell * 0.88f // short axis
+        val bl = cell * 0.98f // long (radial) axis
+        val radius = cell * 0.24f
+        for (dir in 0..3) {
+            val (fill, stroke) = padColors(currentMask and (1 shl dirBit(dir)) != 0)
+            padPaint.color = fill
+            padStroke.color = stroke
+            when (dir) {
+                0 -> rect.set(cx - bw / 2, cy - cell - bl / 2, cx + bw / 2, cy - cell + bl / 2)
+                2 -> rect.set(cx - bw / 2, cy + cell - bl / 2, cx + bw / 2, cy + cell + bl / 2)
+                3 -> rect.set(cx - cell - bl / 2, cy - bw / 2, cx - cell + bl / 2, cy + bw / 2)
+                else -> rect.set(cx + cell - bl / 2, cy - bw / 2, cx + cell + bl / 2, cy + bw / 2)
+            }
+            canvas.drawRoundRect(rect, radius, radius, padPaint)
+            canvas.drawRoundRect(rect, radius, radius, padStroke)
+        }
+        // Minimal center: a small decorative pivot dot, plus a triangle
+        // marker centered on each button.
         markerPaint.color = controlLabelColor()
         markerPaint.alpha = (markerPaint.alpha * 0.55f).toInt()
-        canvas.drawCircle(cx, cy, arm * 0.30f, markerPaint)
-        val ts = arm * 0.17f
-        drawTriangle(canvas, cx, arm * 0.30f, ts, 0) // up
-        drawTriangle(canvas, cx, h - arm * 0.30f, ts, 2) // down
-        drawTriangle(canvas, arm * 0.30f, cy, ts, 3) // left
-        drawTriangle(canvas, w - arm * 0.30f, cy, ts, 1) // right
+        canvas.drawCircle(cx, cy, cell * 0.13f, markerPaint)
+        val ts = cell * 0.16f
+        drawTriangle(canvas, cx, cy - cell, ts, 0) // up
+        drawTriangle(canvas, cx, cy + cell, ts, 2) // down
+        drawTriangle(canvas, cx - cell, cy, ts, 3) // left
+        drawTriangle(canvas, cx + cell, cy, ts, 1) // right
     }
 
     private fun drawTriangle(canvas: Canvas, cx: Float, cy: Float, size: Float, dir: Int) {
